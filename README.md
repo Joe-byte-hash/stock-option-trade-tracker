@@ -239,15 +239,18 @@ DASHBOARD_HOST=localhost
 ## Roadmap
 
 - [x] Core data models (Trade, Account, Position)
-- [x] Encrypted database layer
-- [x] Test-driven development setup
-- [ ] Database connection and ORM
-- [ ] P/L calculation engine
-- [ ] Analytics module (drawdown, metrics)
-- [ ] Interactive dashboard
-- [ ] IBKR integration
-- [ ] Moomoo integration
-- [ ] Questrade integration
+- [x] Encrypted database layer (AES-256-GCM)
+- [x] Test-driven development setup (77 tests, 85% coverage)
+- [x] Database connection and ORM (SQLAlchemy)
+- [x] CRUD operations and repository pattern
+- [x] P/L calculation engine (stocks and options)
+- [x] Analytics module (win rate, drawdown, Sharpe ratio)
+- [x] Time period analysis (daily, weekly, monthly, yearly)
+- [x] Comprehensive examples and documentation
+- [ ] Interactive dashboard with Plotly/Dash
+- [ ] IBKR integration (read-only API)
+- [ ] Moomoo integration (read-only API)
+- [ ] Questrade integration (read-only API)
 - [ ] Advanced charting (entry/exit visualization)
 - [ ] Export to CSV/Excel
 - [ ] Tax reporting features
