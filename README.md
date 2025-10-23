@@ -28,11 +28,14 @@ A comprehensive stock and options trade tracking software with encrypted local d
   - Position history
 
 ### Visualization Dashboard
-- Interactive charts powered by Plotly/Dash
-- Entry/exit points on daily/weekly charts
-- P/L trends over time
-- Win rate and other performance metrics
-- Drawdown visualization
+- **Interactive web dashboard** powered by Plotly/Dash
+- **Real-time metrics cards**: Total P/L, Win Rate, Profit Factor
+- **Equity curve chart**: Track portfolio value over time
+- **P/L distribution**: Histogram of wins and losses
+- **Monthly P/L chart**: Bar chart showing monthly performance
+- **Symbol performance**: Win rate by individual stock/option
+- **Trade history table**: Sortable, paginated trade records
+- **Auto-refresh**: Update dashboard with latest data
 
 ### Broker Integrations (Read-Only)
 - **Interactive Brokers (IBKR)**: Sync trades automatically
@@ -72,7 +75,20 @@ pip install -e .
 
 ## Quick Start
 
-### 1. Initialize Encrypted Database
+### 1. Launch Interactive Dashboard
+
+The fastest way to get started is to run the dashboard demo:
+
+```bash
+python examples/dashboard_demo.py
+```
+
+This will:
+1. Create a sample database with demo trades
+2. Launch the interactive dashboard at http://127.0.0.1:8050
+3. Display portfolio analytics, charts, and trade history
+
+### 2. Initialize Encrypted Database
 
 ```python
 from trade_tracker.database.encryption import DatabaseEncryption
@@ -88,7 +104,7 @@ salt = os.urandom(16)  # Store this
 key = DatabaseEncryption.derive_key_from_password(password, salt)
 ```
 
-### 2. Track Your First Trade
+### 3. Track Your First Trade
 
 ```python
 from trade_tracker.models.trade import StockTrade
@@ -107,7 +123,7 @@ trade = StockTrade(
 print(f"Total cost: ${trade.total_cost}")
 ```
 
-### 3. Track Options
+### 4. Track Options
 
 ```python
 from trade_tracker.models.trade import OptionTrade
@@ -247,7 +263,13 @@ DASHBOARD_HOST=localhost
 - [x] Analytics module (win rate, drawdown, Sharpe ratio)
 - [x] Time period analysis (daily, weekly, monthly, yearly)
 - [x] Comprehensive examples and documentation
-- [ ] Interactive dashboard with Plotly/Dash
+- [x] Interactive dashboard with Plotly/Dash
+  - [x] Real-time metrics cards
+  - [x] Equity curve visualization
+  - [x] P/L distribution charts
+  - [x] Monthly performance charts
+  - [x] Symbol-level analytics
+  - [x] Trade history table
 - [ ] IBKR integration (read-only API)
 - [ ] Moomoo integration (read-only API)
 - [ ] Questrade integration (read-only API)
