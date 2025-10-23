@@ -8,11 +8,14 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 import pandas as pd
 from typing import List, Dict, Any
+from pathlib import Path
+import tempfile
 
 from trade_tracker.database.connection import DatabaseManager
 from trade_tracker.database.repository import TradeRepository, AccountRepository
 from trade_tracker.analytics.pnl import PnLCalculator
 from trade_tracker.analytics.metrics import MetricsCalculator
+from trade_tracker.utils.export import TradeExporter
 
 
 class TradeDashboard:
@@ -76,15 +79,44 @@ class TradeDashboard:
                 html.Div(id='trade-table'),
             ], style={'marginTop': '30px'}),
 
-            # Refresh Button
+            # Refresh and Export Buttons
             html.Div([
                 html.Button('🔄 Refresh Data', id='refresh-button', n_clicks=0,
-                          style={'marginTop': '20px', 'padding': '10px 20px',
-                                'fontSize': '16px', 'cursor': 'pointer'}),
-            ], style={'textAlign': 'center'}),
+                          style={'margin': '20px 10px 0 10px', 'padding': '10px 20px',
+                                'fontSize': '16px', 'cursor': 'pointer',
+                                'backgroundColor': '#3498db', 'color': 'white',
+                                'border': 'none', 'borderRadius': '5px'}),
+                html.Button('📊 Export to CSV', id='export-csv-button', n_clicks=0,
+                          style={'margin': '20px 10px 0 10px', 'padding': '10px 20px',
+                                'fontSize': '16px', 'cursor': 'pointer',
+                                'backgroundColor': '#27ae60', 'color': 'white',
+                                'border': 'none', 'borderRadius': '5px'}),
+                html.Button('📈 Export to Excel', id='export-excel-button', n_clicks=0,
+                          style={'margin': '20px 10px 0 10px', 'padding': '10px 20px',
+                                'fontSize': '16px', 'cursor': 'pointer',
+                                'backgroundColor': '#27ae60', 'color': 'white',
+                                'border': 'none', 'borderRadius': '5px'}),
+                html.Button('📅 Monthly Summary', id='export-monthly-button', n_clicks=0,
+                          style={'margin': '20px 10px 0 10px', 'padding': '10px 20px',
+                                'fontSize': '16px', 'cursor': 'pointer',
+                                'backgroundColor': '#9b59b6', 'color': 'white',
+                                'border': 'none', 'borderRadius': '5px'}),
+                html.Button('🧾 Tax Report', id='export-tax-button', n_clicks=0,
+                          style={'margin': '20px 10px 0 10px', 'padding': '10px 20px',
+                                'fontSize': '16px', 'cursor': 'pointer',
+                                'backgroundColor': '#e67e22', 'color': 'white',
+                                'border': 'none', 'borderRadius': '5px'}),
+            ], style={'textAlign': 'center', 'marginBottom': '30px'}),
+
+            # Download components
+            dcc.Download(id='download-csv'),
+            dcc.Download(id='download-excel'),
+            dcc.Download(id='download-monthly'),
+            dcc.Download(id='download-tax'),
 
             # Hidden div for data storage
             dcc.Store(id='trade-data-store'),
+            dcc.Store(id='pnl-data-store'),
         ], style={'padding': '20px', 'fontFamily': 'Arial, sans-serif'})
 
     def _setup_callbacks(self):
@@ -92,6 +124,7 @@ class TradeDashboard:
 
         @self.app.callback(
             [Output('trade-data-store', 'data'),
+             Output('pnl-data-store', 'data'),
              Output('metrics-cards', 'children'),
              Output('equity-curve-chart', 'figure'),
              Output('pnl-distribution-chart', 'figure'),
@@ -116,7 +149,7 @@ class TradeDashboard:
                     x=0.5, y=0.5, showarrow=False,
                     font=dict(size=20, color="gray")
                 )
-                return {}, [], empty_fig, empty_fig, empty_fig, empty_fig, html.Div("No trades found")
+                return {}, {}, [], empty_fig, empty_fig, empty_fig, empty_fig, html.Div("No trades found")
 
             # Calculate P/L for all trades
             pnl_calculator = PnLCalculator()
@@ -134,7 +167,11 @@ class TradeDashboard:
             symbol_perf = self._create_symbol_performance_chart(pnl_results)
             trade_table = self._create_trade_table(all_trades, pnl_results)
 
-            return {}, metrics_cards, equity_curve, pnl_dist, monthly_pnl, symbol_perf, trade_table
+            # Store data for export callbacks
+            trade_data = {'trades': all_trades, 'pnl_results': pnl_results}
+            pnl_data = {'pnl_results': pnl_results, 'trades': all_trades}
+
+            return {}, pnl_data, metrics_cards, equity_curve, pnl_dist, monthly_pnl, symbol_perf, trade_table
 
     def _calculate_pnl_for_trades(self, trades, calculator):
         """Calculate P/L for trade pairs."""
@@ -389,6 +426,120 @@ class TradeDashboard:
             ],
             page_size=10,
         )
+
+        # Export callbacks
+        @self.app.callback(
+            Output('download-csv', 'data'),
+            Input('export-csv-button', 'n_clicks'),
+            prevent_initial_call=True
+        )
+        def export_csv(n_clicks):
+            """Export trade history to CSV."""
+            # Load data
+            with self.db.get_session() as session:
+                trade_repo = TradeRepository(session)
+                all_trades = trade_repo.get_all()
+
+            if not all_trades:
+                return None
+
+            # Calculate P/L
+            pnl_calculator = PnLCalculator()
+            pnl_results = self._calculate_pnl_for_trades(all_trades, pnl_calculator)
+
+            # Export to temp file
+            temp_dir = Path(tempfile.mkdtemp())
+            output_file = temp_dir / "trade_history.csv"
+
+            exporter = TradeExporter()
+            exporter.export_trades_to_csv(all_trades, pnl_results, output_file)
+
+            return dcc.send_file(str(output_file))
+
+        @self.app.callback(
+            Output('download-excel', 'data'),
+            Input('export-excel-button', 'n_clicks'),
+            prevent_initial_call=True
+        )
+        def export_excel(n_clicks):
+            """Export trade history to Excel."""
+            # Load data
+            with self.db.get_session() as session:
+                trade_repo = TradeRepository(session)
+                all_trades = trade_repo.get_all()
+
+            if not all_trades:
+                return None
+
+            # Calculate P/L
+            pnl_calculator = PnLCalculator()
+            pnl_results = self._calculate_pnl_for_trades(all_trades, pnl_calculator)
+
+            # Export to temp file
+            temp_dir = Path(tempfile.mkdtemp())
+            output_file = temp_dir / "trade_history.xlsx"
+
+            exporter = TradeExporter()
+            exporter.export_trades_to_excel(all_trades, pnl_results, output_file)
+
+            return dcc.send_file(str(output_file))
+
+        @self.app.callback(
+            Output('download-monthly', 'data'),
+            Input('export-monthly-button', 'n_clicks'),
+            prevent_initial_call=True
+        )
+        def export_monthly(n_clicks):
+            """Export monthly summary to CSV."""
+            # Load data
+            with self.db.get_session() as session:
+                trade_repo = TradeRepository(session)
+                all_trades = trade_repo.get_all()
+
+            if not all_trades:
+                return None
+
+            # Calculate P/L
+            pnl_calculator = PnLCalculator()
+            pnl_results = self._calculate_pnl_for_trades(all_trades, pnl_calculator)
+
+            # Export to temp file
+            temp_dir = Path(tempfile.mkdtemp())
+            output_file = temp_dir / "monthly_summary.csv"
+
+            exporter = TradeExporter()
+            exporter.export_monthly_summary_to_csv(pnl_results, output_file)
+
+            return dcc.send_file(str(output_file))
+
+        @self.app.callback(
+            Output('download-tax', 'data'),
+            Input('export-tax-button', 'n_clicks'),
+            prevent_initial_call=True
+        )
+        def export_tax(n_clicks):
+            """Export tax report for current year."""
+            # Load data
+            with self.db.get_session() as session:
+                trade_repo = TradeRepository(session)
+                all_trades = trade_repo.get_all()
+
+            if not all_trades:
+                return None
+
+            # Calculate P/L
+            pnl_calculator = PnLCalculator()
+            pnl_results = self._calculate_pnl_for_trades(all_trades, pnl_calculator)
+
+            # Export to temp file
+            current_year = datetime.now().year
+            temp_dir = Path(tempfile.mkdtemp())
+            output_file = temp_dir / f"tax_report_{current_year}.csv"
+
+            exporter = TradeExporter()
+            exporter.export_tax_report(all_trades, pnl_results, current_year, output_file)
+
+            return dcc.send_file(str(output_file))
 
     def run(self, host='127.0.0.1', port=8050, debug=True):
         """

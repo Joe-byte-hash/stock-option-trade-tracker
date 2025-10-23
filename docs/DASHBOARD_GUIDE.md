@@ -123,6 +123,62 @@ Click the **🔄 Refresh Data** button to reload all data from the database.
 - After importing trades from a broker
 - To see updated analytics
 
+### Export Buttons
+
+The dashboard provides several export options for your trade data:
+
+#### 📊 Export to CSV
+
+Exports complete trade history with P/L calculations to a CSV file.
+
+**Includes:**
+- Symbol, entry/exit dates and prices
+- Quantity, cost basis, proceeds
+- Realized P/L and return percentage
+- Holding period in days
+- Option details (strike, expiry, type) if applicable
+
+**Use case:** Import into spreadsheet software, share with accountant, backup records
+
+#### 📈 Export to Excel
+
+Exports the same data as CSV but in Excel format (.xlsx) with formatting.
+
+**Features:**
+- Color-coded P/L (green for wins, red for losses)
+- Formatted headers with proper styling
+- Auto-sized columns for readability
+- Multiple sheets (if applicable)
+
+**Use case:** Professional reports, detailed analysis, presentations
+
+#### 📅 Monthly Summary
+
+Exports aggregated monthly P/L statistics to CSV.
+
+**Includes:**
+- Month identifier (YYYY-MM)
+- Total P/L for the month
+- Number of trades
+- Win/loss count
+- Win rate percentage
+
+**Use case:** Track monthly performance trends, identify seasonal patterns
+
+#### 🧾 Tax Report
+
+Generates IRS-ready tax report for capital gains/losses.
+
+**Includes:**
+- Symbol, acquisition and sale dates
+- Quantity, cost basis, proceeds
+- Gain/loss amount
+- Short-term vs long-term classification
+
+**Filters:** Automatically filters for current tax year
+
+**Use case:** Tax preparation, Schedule D reporting, record keeping
+
 ## Data Flow
 
 ```
@@ -220,6 +276,7 @@ dashboard.run(port=8051)  # Use different port
    - Click refresh button
    - Review updated metrics
    - Analyze daily performance
+   - Export CSV for record keeping (optional)
 
 ### Weekly Review
 
@@ -234,6 +291,15 @@ dashboard.run(port=8051)  # Use different port
 2. Calculate Sharpe ratio (coming soon in dashboard)
 3. Export data for detailed analysis
 4. Adjust trading strategy based on metrics
+
+### End of Year Tax Preparation
+
+1. Click **🧾 Tax Report** button
+2. Review exported CSV file
+3. Verify all trades are included
+4. Check short-term vs long-term classifications
+5. Import to tax software or provide to accountant
+6. Export **Excel** version for detailed records
 
 ## Data Security
 
@@ -263,15 +329,20 @@ Access specific views:
 
 ## Future Enhancements
 
+Completed:
+- [x] Export to CSV/Excel
+- [x] Tax reporting functionality
+- [x] Monthly summary exports
+
 Coming soon:
 - [ ] Real-time price updates
 - [ ] Advanced filtering (date range, symbol)
 - [ ] Compare multiple symbols side-by-side
-- [ ] Export to CSV/Excel
 - [ ] Custom color themes
 - [ ] Mobile-responsive design
 - [ ] Trade notes/annotations
 - [ ] Performance benchmarking
+- [ ] Multi-year tax reports
 
 ## Support
 
@@ -287,7 +358,10 @@ The Trade Tracker Dashboard provides:
 - ✅ Interactive visualizations
 - ✅ Comprehensive trade history
 - ✅ Easy-to-understand metrics
+- ✅ CSV/Excel export functionality
+- ✅ Tax reporting for Schedule D
+- ✅ Monthly summary exports
 - ✅ Local and secure
 - ✅ Fast and responsive
 
-**Start trading smarter with visual insights!** 📊
+**Start trading smarter with visual insights and professional reporting!** 📊

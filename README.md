@@ -36,6 +36,11 @@ A comprehensive stock and options trade tracking software with encrypted local d
 - **Symbol performance**: Win rate by individual stock/option
 - **Trade history table**: Sortable, paginated trade records
 - **Auto-refresh**: Update dashboard with latest data
+- **Export functionality**:
+  - Export to CSV for spreadsheet analysis
+  - Export to Excel with professional formatting
+  - Monthly summary reports
+  - Tax reports for Schedule D (capital gains/losses)
 
 ### Broker Integrations (Read-Only)
 - **Interactive Brokers (IBKR)**: Sync trades automatically

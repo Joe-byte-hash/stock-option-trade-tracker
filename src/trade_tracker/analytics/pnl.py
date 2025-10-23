@@ -28,6 +28,11 @@ class PositionPnL:
     cost_basis: Optional[Decimal] = None
     proceeds: Optional[Decimal] = None
     holding_period_days: Optional[int] = None
+    quantity: Optional[int] = None
+    entry_price: Optional[Decimal] = None
+    exit_price: Optional[Decimal] = None
+    entry_date: Optional[datetime] = None
+    exit_date: Optional[datetime] = None
 
 
 class PnLCalculator:
@@ -89,6 +94,11 @@ class PnLCalculator:
             cost_basis=cost_basis.quantize(Decimal("0.01")),
             proceeds=proceeds.quantize(Decimal("0.01")),
             holding_period_days=holding_days,
+            quantity=quantity,
+            entry_price=buy_trade.price,
+            exit_price=sell_trade.price,
+            entry_date=buy_trade.trade_date,
+            exit_date=sell_trade.trade_date,
         )
 
     def calculate_option_pnl(
@@ -143,6 +153,11 @@ class PnLCalculator:
             cost_basis=cost_basis.quantize(Decimal("0.01")),
             proceeds=proceeds.quantize(Decimal("0.01")),
             holding_period_days=holding_days,
+            quantity=quantity,
+            entry_price=buy_trade.price,
+            exit_price=sell_trade.price,
+            entry_date=buy_trade.trade_date,
+            exit_date=sell_trade.trade_date,
         )
 
     def calculate_option_expiry_pnl(
