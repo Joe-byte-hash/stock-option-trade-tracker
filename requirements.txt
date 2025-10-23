@@ -13,6 +13,7 @@ numpy>=1.26.0
 # Visualization
 plotly>=5.18.0
 dash>=2.14.0
+openpyxl>=3.1.0
 
 # Security & Encryption
 cryptography>=41.0.0
