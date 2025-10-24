@@ -74,6 +74,7 @@ class TradeDB(Base):
         ForeignKey("accounts.id"), nullable=True
     )
     status: Mapped[str] = mapped_column(String(20), default="open", nullable=False)
+    strategy: Mapped[Optional[str]] = mapped_column(String(50), default="untagged", nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Option-specific fields
