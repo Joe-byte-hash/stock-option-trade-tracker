@@ -15,6 +15,7 @@ from trade_tracker.database.connection import DatabaseManager
 from trade_tracker.database.repository import TradeRepository, AccountRepository
 from trade_tracker.analytics.pnl import PnLCalculator
 from trade_tracker.analytics.metrics import MetricsCalculator
+from trade_tracker.analytics.strategy import StrategyAnalyzer
 from trade_tracker.utils.export import TradeExporter
 from trade_tracker.integrations.manager import IntegrationManager
 from trade_tracker.integrations.ibkr import IBKRBroker
@@ -227,6 +228,31 @@ class TradeDashboard:
                         html.Div(id='import-history-table'),
                     ]),
                 ], style={'maxWidth': '1000px', 'margin': '0 auto', 'padding': '20px'}),
+            ]),
+
+            # Strategy Performance Section
+            html.Hr(style={'marginTop': '40px', 'marginBottom': '30px'}),
+            html.Div([
+                html.H2("🎯 Strategy Performance", style={'textAlign': 'center', 'color': '#2c3e50'}),
+                html.P("Analyze which trading strategies are most profitable",
+                      style={'textAlign': 'center', 'color': '#7f8c8d', 'marginBottom': '30px'}),
+
+                html.Div([
+                    # Strategy metrics cards
+                    html.Div(id='strategy-metrics-cards', style={'marginBottom': '30px'}),
+
+                    # Strategy comparison chart
+                    html.Div([
+                        html.H4("P/L by Strategy", style={'marginBottom': '15px'}),
+                        dcc.Graph(id='strategy-pnl-chart'),
+                    ], style={'marginBottom': '30px'}),
+
+                    # Strategy performance table
+                    html.Div([
+                        html.H4("Detailed Strategy Breakdown", style={'marginBottom': '15px'}),
+                        html.Div(id='strategy-performance-table'),
+                    ]),
+                ], style={'maxWidth': '1200px', 'margin': '0 auto', 'padding': '20px'}),
             ]),
 
             # Download components
@@ -906,6 +932,183 @@ class TradeDashboard:
             except Exception as e:
                 return html.Div(f"Error loading history: {str(e)}",
                               style={'color': '#e74c3c', 'textAlign': 'center'})
+
+        # Strategy Performance Callbacks
+        @self.app.callback(
+            [Output('strategy-metrics-cards', 'children'),
+             Output('strategy-pnl-chart', 'figure'),
+             Output('strategy-performance-table', 'children')],
+            [Input('refresh-button', 'n_clicks')]
+        )
+        def update_strategy_performance(n_clicks):
+            """Update strategy performance visualizations."""
+            try:
+                with self.db.get_session() as session:
+                    trade_repo = TradeRepository(session)
+                    all_trades = trade_repo.get_all()
+
+                    if not all_trades:
+                        empty_msg = html.Div("No trades available for strategy analysis",
+                                           style={'textAlign': 'center', 'color': '#7f8c8d', 'padding': '50px'})
+                        return empty_msg, {}, empty_msg
+
+                    # Calculate P/L
+                    pnl_calc = PnLCalculator()
+                    pnl_results = []
+                    for trade in all_trades:
+                        if trade.asset_type.value == 'stock':
+                            pnl = pnl_calc.calculate_stock_pnl([trade])
+                            if pnl:
+                                pnl_results.append(pnl)
+
+                    # Analyze strategies
+                    strategy_analyzer = StrategyAnalyzer()
+                    strategy_results = strategy_analyzer.analyze_by_strategy(all_trades, pnl_results)
+
+                    if not strategy_results:
+                        empty_msg = html.Div("No completed trades to analyze",
+                                           style={'textAlign': 'center', 'color': '#7f8c8d', 'padding': '50px'})
+                        return empty_msg, {}, empty_msg
+
+                    # Create metrics cards
+                    comparison = strategy_analyzer.compare_strategies(all_trades, pnl_results)
+                    cards = self._create_strategy_cards(comparison)
+
+                    # Create P/L chart
+                    chart = self._create_strategy_pnl_chart(strategy_results)
+
+                    # Create performance table
+                    table = self._create_strategy_table(strategy_results)
+
+                    return cards, chart, table
+
+            except Exception as e:
+                error_msg = html.Div(f"Error analyzing strategies: {str(e)}",
+                                   style={'color': '#e74c3c', 'textAlign': 'center', 'padding': '50px'})
+                return error_msg, {}, error_msg
+
+    def _create_strategy_cards(self, comparison: Dict[str, Any]) -> html.Div:
+        """Create strategy summary cards."""
+        best = comparison.get('best_strategy')
+        worst = comparison.get('worst_strategy')
+        most_used = comparison.get('most_used_strategy')
+
+        cards = []
+
+        if best:
+            cards.append(html.Div([
+                html.H5("🏆 Best Strategy", style={'color': '#27ae60', 'marginBottom': '10px'}),
+                html.P(best['strategy_name'], style={'fontSize': '20px', 'fontWeight': 'bold'}),
+                html.P(f"P/L: ${float(best['total_pnl']):.2f}", style={'fontSize': '16px'}),
+                html.P(f"Win Rate: {best['win_rate']:.1f}%", style={'fontSize': '14px', 'color': '#7f8c8d'}),
+            ], style={'flex': '1', 'padding': '20px', 'backgroundColor': '#d5f4e6',
+                     'borderRadius': '10px', 'marginRight': '10px', 'textAlign': 'center'}))
+
+        if worst:
+            cards.append(html.Div([
+                html.H5("📉 Worst Strategy", style={'color': '#e74c3c', 'marginBottom': '10px'}),
+                html.P(worst['strategy_name'], style={'fontSize': '20px', 'fontWeight': 'bold'}),
+                html.P(f"P/L: ${float(worst['total_pnl']):.2f}", style={'fontSize': '16px'}),
+                html.P(f"Win Rate: {worst['win_rate']:.1f}%", style={'fontSize': '14px', 'color': '#7f8c8d'}),
+            ], style={'flex': '1', 'padding': '20px', 'backgroundColor': '#fadbd8',
+                     'borderRadius': '10px', 'marginRight': '10px', 'textAlign': 'center'}))
+
+        if most_used:
+            cards.append(html.Div([
+                html.H5("📊 Most Used", style={'color': '#3498db', 'marginBottom': '10px'}),
+                html.P(most_used['strategy_name'], style={'fontSize': '20px', 'fontWeight': 'bold'}),
+                html.P(f"Trades: {most_used['total_trades']}", style={'fontSize': '16px'}),
+                html.P(f"Win Rate: {most_used['win_rate']:.1f}%", style={'fontSize': '14px', 'color': '#7f8c8d'}),
+            ], style={'flex': '1', 'padding': '20px', 'backgroundColor': '#d6eaf8',
+                     'borderRadius': '10px', 'textAlign': 'center'}))
+
+        return html.Div(cards, style={'display': 'flex', 'justifyContent': 'space-around'})
+
+    def _create_strategy_pnl_chart(self, strategy_results: List[Dict[str, Any]]) -> go.Figure:
+        """Create strategy P/L comparison bar chart."""
+        strategies = [r['strategy_name'] for r in strategy_results]
+        pnls = [float(r['total_pnl']) for r in strategy_results]
+
+        colors = ['#2ecc71' if pnl > 0 else '#e74c3c' for pnl in pnls]
+
+        fig = go.Figure(data=[
+            go.Bar(
+                x=strategies,
+                y=pnls,
+                marker_color=colors,
+                text=[f"${pnl:.2f}" for pnl in pnls],
+                textposition='auto',
+            )
+        ])
+
+        fig.update_layout(
+            title="Total P/L by Strategy",
+            xaxis_title="Strategy",
+            yaxis_title="P/L ($)",
+            template="plotly_white",
+            height=400,
+            showlegend=False
+        )
+
+        return fig
+
+    def _create_strategy_table(self, strategy_results: List[Dict[str, Any]]) -> dash_table.DataTable:
+        """Create detailed strategy performance table."""
+        table_data = []
+        for result in strategy_results:
+            table_data.append({
+                'Strategy': result['strategy_name'],
+                'Trades': result['total_trades'],
+                'Wins': result['winning_trades'],
+                'Losses': result['losing_trades'],
+                'Win Rate': f"{result['win_rate']:.1f}%",
+                'Total P/L': f"${float(result['total_pnl']):.2f}",
+                'Avg P/L': f"${float(result['average_pnl']):.2f}",
+                'Max Win': f"${float(result['max_win']):.2f}",
+                'Max Loss': f"${float(result['max_loss']):.2f}",
+            })
+
+        return dash_table.DataTable(
+            data=table_data,
+            columns=[{'name': col, 'id': col} for col in table_data[0].keys() if table_data],
+            style_table={'overflowX': 'auto'},
+            style_cell={
+                'textAlign': 'left',
+                'padding': '12px',
+                'fontSize': '14px',
+            },
+            style_header={
+                'backgroundColor': '#3498db',
+                'color': 'white',
+                'fontWeight': 'bold',
+                'textAlign': 'center',
+            },
+            style_data_conditional=[
+                {
+                    'if': {'row_index': 'odd'},
+                    'backgroundColor': '#ecf0f1'
+                },
+                {
+                    'if': {
+                        'filter_query': '{Total P/L} contains "-"',
+                        'column_id': 'Total P/L'
+                    },
+                    'color': '#e74c3c',
+                    'fontWeight': 'bold'
+                },
+                {
+                    'if': {
+                        'filter_query': '{Total P/L} contains "$" && {Total P/L} !contains "-"',
+                        'column_id': 'Total P/L'
+                    },
+                    'color': '#27ae60',
+                    'fontWeight': 'bold'
+                },
+            ],
+            page_size=15,
+            sort_action='native',
+            filter_action='native',
+        )
 
     def run(self, host='127.0.0.1', port=8050, debug=True):
         """
