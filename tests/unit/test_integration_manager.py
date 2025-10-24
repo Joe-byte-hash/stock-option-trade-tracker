@@ -15,7 +15,8 @@ from trade_tracker.integrations.exceptions import (
 )
 from trade_tracker.models.trade import StockTrade, TradeType
 from trade_tracker.models.position import Position
-from trade_tracker.models.account import Account
+from trade_tracker.models.account import Account, BrokerType
+from trade_tracker.database.repository import AccountRepository
 
 
 @pytest.fixture
@@ -28,9 +29,29 @@ def temp_db_path():
 
 
 @pytest.fixture
-def integration_manager(temp_db_path):
-    """Create integration manager with temporary database."""
-    return IntegrationManager(db_path=str(temp_db_path))
+def test_account():
+    """Create test account."""
+    return Account(
+        id=1,
+        name="Test Account",
+        broker=BrokerType.MANUAL,
+        account_number="TEST-12345",
+        is_active=True
+    )
+
+
+@pytest.fixture
+def integration_manager(temp_db_path, test_account):
+    """Create integration manager with temporary database and test account."""
+    manager = IntegrationManager(db_path=str(temp_db_path))
+
+    # Create the test account in the database
+    with manager.db.get_session() as session:
+        account_repo = AccountRepository(session)
+        account_repo.create(test_account)
+        session.commit()
+
+    return manager
 
 
 @pytest.fixture
