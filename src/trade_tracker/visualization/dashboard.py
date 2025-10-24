@@ -16,6 +16,9 @@ from trade_tracker.database.repository import TradeRepository, AccountRepository
 from trade_tracker.analytics.pnl import PnLCalculator
 from trade_tracker.analytics.metrics import MetricsCalculator
 from trade_tracker.utils.export import TradeExporter
+from trade_tracker.integrations.manager import IntegrationManager
+from trade_tracker.integrations.ibkr import IBKRBroker
+from trade_tracker.integrations.credentials import CredentialManager
 
 
 class TradeDashboard:
@@ -108,6 +111,78 @@ class TradeDashboard:
                                 'border': 'none', 'borderRadius': '5px'}),
             ], style={'textAlign': 'center', 'marginBottom': '30px'}),
 
+            # Broker Import Section
+            html.Hr(style={'marginTop': '40px', 'marginBottom': '30px'}),
+            html.Div([
+                html.H2("🔌 Broker Integration", style={'textAlign': 'center', 'color': '#2c3e50'}),
+
+                # Broker selection and connection
+                html.Div([
+                    html.Div([
+                        html.Label("Broker:", style={'fontWeight': 'bold', 'marginRight': '10px'}),
+                        dcc.Dropdown(
+                            id='broker-dropdown',
+                            options=[
+                                {'label': '📈 Interactive Brokers (IBKR)', 'value': 'ibkr'},
+                                {'label': '🐂 Moomoo (Coming Soon)', 'value': 'moomoo', 'disabled': True},
+                                {'label': '🍁 Questrade (Coming Soon)', 'value': 'questrade', 'disabled': True},
+                            ],
+                            value='ibkr',
+                            style={'width': '300px', 'display': 'inline-block'}
+                        ),
+                    ], style={'marginBottom': '20px'}),
+
+                    # IBKR Connection Settings
+                    html.Div([
+                        html.H4("Connection Settings", style={'marginBottom': '15px'}),
+                        html.Div([
+                            html.Div([
+                                html.Label("Host:"),
+                                dcc.Input(id='broker-host', type='text', value='127.0.0.1',
+                                         style={'width': '100%', 'padding': '8px', 'marginTop': '5px'}),
+                            ], style={'width': '30%', 'display': 'inline-block', 'marginRight': '20px'}),
+
+                            html.Div([
+                                html.Label("Port:"),
+                                dcc.Input(id='broker-port', type='number', value=7497,
+                                         style={'width': '100%', 'padding': '8px', 'marginTop': '5px'}),
+                                html.Small("7497=Paper, 7496=Live TWS, 4001=Gateway",
+                                          style={'color': '#7f8c8d'}),
+                            ], style={'width': '30%', 'display': 'inline-block', 'marginRight': '20px'}),
+
+                            html.Div([
+                                html.Label("Client ID:"),
+                                dcc.Input(id='broker-client-id', type='number', value=1,
+                                         style={'width': '100%', 'padding': '8px', 'marginTop': '5px'}),
+                            ], style={'width': '20%', 'display': 'inline-block'}),
+                        ]),
+                    ], id='broker-settings', style={'marginBottom': '20px', 'padding': '15px',
+                                                     'backgroundColor': '#ecf0f1', 'borderRadius': '5px'}),
+
+                    # Import Controls
+                    html.Div([
+                        html.Button('🔌 Connect & Import Trades', id='import-trades-button', n_clicks=0,
+                                  style={'padding': '12px 30px', 'fontSize': '16px', 'cursor': 'pointer',
+                                        'backgroundColor': '#2ecc71', 'color': 'white',
+                                        'border': 'none', 'borderRadius': '5px', 'marginRight': '10px'}),
+                        html.Button('💼 Sync Positions', id='sync-positions-button', n_clicks=0,
+                                  style={'padding': '12px 30px', 'fontSize': '16px', 'cursor': 'pointer',
+                                        'backgroundColor': '#3498db', 'color': 'white',
+                                        'border': 'none', 'borderRadius': '5px'}),
+                    ], style={'marginTop': '20px', 'textAlign': 'center'}),
+
+                    # Import Results
+                    html.Div(id='import-results', style={'marginTop': '30px', 'padding': '15px',
+                                                         'borderRadius': '5px', 'minHeight': '50px'}),
+
+                    # Import History
+                    html.Div([
+                        html.H4("Recent Imports", style={'marginTop': '30px', 'marginBottom': '15px'}),
+                        html.Div(id='import-history-table'),
+                    ]),
+                ], style={'maxWidth': '1000px', 'margin': '0 auto', 'padding': '20px'}),
+            ]),
+
             # Download components
             dcc.Download(id='download-csv'),
             dcc.Download(id='download-excel'),
@@ -117,6 +192,7 @@ class TradeDashboard:
             # Hidden div for data storage
             dcc.Store(id='trade-data-store'),
             dcc.Store(id='pnl-data-store'),
+            dcc.Interval(id='import-status-interval', interval=1000, disabled=True),
         ], style={'padding': '20px', 'fontFamily': 'Arial, sans-serif'})
 
     def _setup_callbacks(self):
@@ -540,6 +616,215 @@ class TradeDashboard:
             exporter.export_tax_report(all_trades, pnl_results, current_year, output_file)
 
             return dcc.send_file(str(output_file))
+
+        # Broker Import Callbacks
+        @self.app.callback(
+            Output('import-results', 'children'),
+            [Input('import-trades-button', 'n_clicks')],
+            [State('broker-host', 'value'),
+             State('broker-port', 'value'),
+             State('broker-client-id', 'value'),
+             State('broker-dropdown', 'value')],
+            prevent_initial_call=True
+        )
+        def import_trades(n_clicks, host, port, client_id, broker_type):
+            """Import trades from broker."""
+            if broker_type != 'ibkr':
+                return html.Div("Only IBKR is currently supported.",
+                              style={'color': '#e74c3c', 'textAlign': 'center'})
+
+            try:
+                # Create broker connection
+                credentials = {
+                    'host': host,
+                    'port': int(port),
+                    'client_id': int(client_id)
+                }
+
+                broker = IBKRBroker(credentials)
+
+                # Show connecting message
+                connecting_msg = html.Div([
+                    html.Div("🔌 Connecting to IBKR...", style={'fontSize': '18px', 'marginBottom': '10px'}),
+                    html.Div("Please ensure TWS or IB Gateway is running and accepting API connections.",
+                            style={'color': '#7f8c8d', 'fontSize': '14px'})
+                ], style={'textAlign': 'center', 'color': '#3498db'})
+
+                try:
+                    # Connect to broker
+                    broker.connect()
+
+                    # Import trades using IntegrationManager
+                    manager = IntegrationManager(db_path=str(self.db.db_path))
+                    result = manager.import_trades(broker, account_id=1)
+
+                    # Disconnect
+                    broker.disconnect()
+
+                    # Format results
+                    if result['success']:
+                        return html.Div([
+                            html.H4("✅ Import Successful!", style={'color': '#27ae60', 'marginBottom': '15px'}),
+                            html.Div([
+                                html.Div(f"📥 Imported: {result['imported_count']} trades",
+                                       style={'fontSize': '16px', 'marginBottom': '5px'}),
+                                html.Div(f"🔄 Duplicates skipped: {result['duplicate_count']}",
+                                       style={'fontSize': '16px', 'marginBottom': '5px'}),
+                                html.Div(f"⚠️ Errors: {result['error_count']}",
+                                       style={'fontSize': '16px'}),
+                            ]),
+                            html.Div("Click 'Refresh Data' above to see imported trades in the dashboard.",
+                                   style={'marginTop': '15px', 'fontSize': '14px', 'color': '#7f8c8d',
+                                         'fontStyle': 'italic'})
+                        ], style={'backgroundColor': '#d5f4e6', 'padding': '20px',
+                                'borderRadius': '5px', 'textAlign': 'center'})
+                    else:
+                        error_msg = result.get('error', 'Unknown error')
+                        return html.Div([
+                            html.H4("❌ Import Failed", style={'color': '#e74c3c', 'marginBottom': '10px'}),
+                            html.Div(f"Error: {error_msg}", style={'fontSize': '14px'})
+                        ], style={'backgroundColor': '#fadbd8', 'padding': '20px',
+                                'borderRadius': '5px', 'textAlign': 'center'})
+
+                except Exception as e:
+                    broker.disconnect()
+                    return html.Div([
+                        html.H4("❌ Connection Failed", style={'color': '#e74c3c', 'marginBottom': '10px'}),
+                        html.Div(f"Error: {str(e)}", style={'fontSize': '14px', 'marginBottom': '10px'}),
+                        html.Div("Make sure TWS/IB Gateway is running and configured to accept API connections.",
+                               style={'fontSize': '12px', 'color': '#7f8c8d'})
+                    ], style={'backgroundColor': '#fadbd8', 'padding': '20px',
+                            'borderRadius': '5px', 'textAlign': 'center'})
+
+            except Exception as e:
+                return html.Div([
+                    html.H4("❌ Error", style={'color': '#e74c3c', 'marginBottom': '10px'}),
+                    html.Div(str(e), style={'fontSize': '14px'})
+                ], style={'backgroundColor': '#fadbd8', 'padding': '20px',
+                        'borderRadius': '5px', 'textAlign': 'center'})
+
+        @self.app.callback(
+            Output('import-results', 'children', allow_duplicate=True),
+            [Input('sync-positions-button', 'n_clicks')],
+            [State('broker-host', 'value'),
+             State('broker-port', 'value'),
+             State('broker-client-id', 'value'),
+             State('broker-dropdown', 'value')],
+            prevent_initial_call=True
+        )
+        def sync_positions(n_clicks, host, port, client_id, broker_type):
+            """Sync positions from broker."""
+            if broker_type != 'ibkr':
+                return html.Div("Only IBKR is currently supported.",
+                              style={'color': '#e74c3c', 'textAlign': 'center'})
+
+            try:
+                # Create broker connection
+                credentials = {
+                    'host': host,
+                    'port': int(port),
+                    'client_id': int(client_id)
+                }
+
+                broker = IBKRBroker(credentials)
+
+                try:
+                    # Connect to broker
+                    broker.connect()
+
+                    # Sync positions
+                    manager = IntegrationManager(db_path=str(self.db.db_path))
+                    result = manager.sync_positions(broker, account_id=1)
+
+                    # Disconnect
+                    broker.disconnect()
+
+                    # Format results
+                    if result['success']:
+                        return html.Div([
+                            html.H4("✅ Position Sync Successful!",
+                                  style={'color': '#27ae60', 'marginBottom': '15px'}),
+                            html.Div(f"💼 Synced: {result['synced_count']} positions",
+                                   style={'fontSize': '16px'}),
+                        ], style={'backgroundColor': '#d5f4e6', 'padding': '20px',
+                                'borderRadius': '5px', 'textAlign': 'center'})
+                    else:
+                        error_msg = result.get('error', 'Unknown error')
+                        return html.Div([
+                            html.H4("❌ Sync Failed", style={'color': '#e74c3c', 'marginBottom': '10px'}),
+                            html.Div(f"Error: {error_msg}", style={'fontSize': '14px'})
+                        ], style={'backgroundColor': '#fadbd8', 'padding': '20px',
+                                'borderRadius': '5px', 'textAlign': 'center'})
+
+                except Exception as e:
+                    broker.disconnect()
+                    return html.Div([
+                        html.H4("❌ Connection Failed", style={'color': '#e74c3c', 'marginBottom': '10px'}),
+                        html.Div(f"Error: {str(e)}", style={'fontSize': '14px'})
+                    ], style={'backgroundColor': '#fadbd8', 'padding': '20px',
+                            'borderRadius': '5px', 'textAlign': 'center'})
+
+            except Exception as e:
+                return html.Div([
+                    html.H4("❌ Error", style={'color': '#e74c3c', 'marginBottom': '10px'}),
+                    html.Div(str(e), style={'fontSize': '14px'})
+                ], style={'backgroundColor': '#fadbd8', 'padding': '20px',
+                        'borderRadius': '5px', 'textAlign': 'center'})
+
+        @self.app.callback(
+            Output('import-history-table', 'children'),
+            [Input('import-trades-button', 'n_clicks'),
+             Input('sync-positions-button', 'n_clicks')],
+            prevent_initial_call=False
+        )
+        def update_import_history(import_clicks, sync_clicks):
+            """Update import history table."""
+            try:
+                manager = IntegrationManager(db_path=str(self.db.db_path))
+                history = manager.get_import_history(limit=10)
+
+                if not history:
+                    return html.Div("No import history yet. Import trades to see history here.",
+                                  style={'textAlign': 'center', 'color': '#7f8c8d', 'fontStyle': 'italic'})
+
+                # Create table data
+                table_data = []
+                for record in history:
+                    table_data.append({
+                        'Time': record['timestamp'][:19],  # Remove microseconds
+                        'Broker': record['broker'],
+                        'Imported': record['imported_count'],
+                        'Duplicates': record['duplicate_count'],
+                        'Errors': record['error_count']
+                    })
+
+                return dash_table.DataTable(
+                    data=table_data,
+                    columns=[{'name': col, 'id': col} for col in table_data[0].keys()],
+                    style_table={'overflowX': 'auto'},
+                    style_cell={
+                        'textAlign': 'left',
+                        'padding': '10px',
+                        'fontSize': '14px',
+                    },
+                    style_header={
+                        'backgroundColor': '#3498db',
+                        'color': 'white',
+                        'fontWeight': 'bold',
+                        'textAlign': 'center',
+                    },
+                    style_data_conditional=[
+                        {
+                            'if': {'row_index': 'odd'},
+                            'backgroundColor': '#ecf0f1'
+                        }
+                    ],
+                    page_size=10,
+                )
+
+            except Exception as e:
+                return html.Div(f"Error loading history: {str(e)}",
+                              style={'color': '#e74c3c', 'textAlign': 'center'})
 
     def run(self, host='127.0.0.1', port=8050, debug=True):
         """

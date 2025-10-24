@@ -43,10 +43,19 @@ A comprehensive stock and options trade tracking software with encrypted local d
   - Tax reports for Schedule D (capital gains/losses)
 
 ### Broker Integrations (Read-Only)
-- **Interactive Brokers (IBKR)**: Sync trades automatically
-- **Moomoo**: Import trade history
-- **Questrade**: Read account data
-- **Security**: Read-only access, credentials encrypted locally
+- **Interactive Brokers (IBKR)**:
+  - Fully implemented with TWS/IB Gateway API integration
+  - Automatic trade history import
+  - Position synchronization
+  - Real-time connection through dashboard UI
+  - See [IBKR Setup Guide](docs/IBKR_SETUP.md) for configuration instructions
+- **Moomoo**: Coming soon
+- **Questrade**: Coming soon
+- **Security**:
+  - Read-only API access
+  - Credentials encrypted with AES-256-GCM
+  - Password-based encryption per broker
+  - No data sent to third parties
 
 ## Installation
 
@@ -149,6 +158,21 @@ option = OptionTrade(
 
 print(f"Total cost: ${option.total_cost}")
 ```
+
+### 5. Import from Interactive Brokers
+
+The easiest way to populate your database is to import trades directly from your broker:
+
+1. **Launch the dashboard**: Run `python examples/dashboard_demo.py`
+2. **Start TWS/IB Gateway**: Ensure it's running and API is enabled
+3. **Navigate to "Broker Integration"**: Scroll down in the dashboard
+4. **Configure connection**:
+   - Host: `127.0.0.1`
+   - Port: `7497` (paper) or `7496` (live)
+   - Client ID: `1`
+5. **Click "Connect & Import Trades"**: All your trades will be imported automatically
+
+For detailed setup instructions, see the [IBKR Setup Guide](docs/IBKR_SETUP.md)
 
 ## Project Structure
 
@@ -275,12 +299,21 @@ DASHBOARD_HOST=localhost
   - [x] Monthly performance charts
   - [x] Symbol-level analytics
   - [x] Trade history table
-- [ ] IBKR integration (read-only API)
+- [x] Export to CSV/Excel
+  - [x] CSV export with customizable columns
+  - [x] Excel export with professional formatting
+  - [x] Monthly summary reports
+  - [x] Tax reports for Schedule D
+- [x] IBKR integration (read-only API)
+  - [x] TWS/IB Gateway API connection
+  - [x] Trade history import
+  - [x] Position synchronization
+  - [x] Duplicate detection
+  - [x] Dashboard UI integration
+  - [x] Import history tracking
 - [ ] Moomoo integration (read-only API)
 - [ ] Questrade integration (read-only API)
 - [ ] Advanced charting (entry/exit visualization)
-- [ ] Export to CSV/Excel
-- [ ] Tax reporting features
 - [ ] Mobile app (future)
 
 ## Contributing
@@ -304,6 +337,23 @@ MIT License - see LICENSE file for details
 
 This software is for educational and personal use only. Not financial advice.
 Trading stocks and options involves risk. Past performance does not guarantee future results.
+
+## Documentation
+
+Comprehensive guides are available in the `/docs` directory:
+
+- **[IBKR Setup Guide](docs/IBKR_SETUP.md)**: Complete guide for setting up Interactive Brokers integration
+  - TWS/IB Gateway configuration
+  - API settings and permissions
+  - Port configuration
+  - Troubleshooting common issues
+  - Security best practices
+
+- **[Dashboard Guide](docs/DASHBOARD_GUIDE.md)**: Interactive dashboard usage guide
+  - Feature overview
+  - Chart explanations
+  - Export functionality
+  - Customization options
 
 ## Support
 

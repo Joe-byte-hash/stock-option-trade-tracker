@@ -63,3 +63,7 @@ data/trades/*.csv
 data/backups/
 *.key
 config/secrets.yml
+config/ibkr.json
+config/moomoo.json
+config/questrade.json
+*.import_history.json

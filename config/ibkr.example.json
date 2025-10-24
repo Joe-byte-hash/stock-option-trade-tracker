@@ -1,0 +1,37 @@
+{
+  "_comment": "Example IBKR configuration file. Copy to ibkr.json and update with your settings.",
+  "_security_warning": "This file contains connection settings only. Actual credentials are encrypted in the database.",
+
+  "connection": {
+    "host": "127.0.0.1",
+    "port": 7497,
+    "client_id": 1,
+    "_port_guide": {
+      "7497": "TWS Paper Trading",
+      "7496": "TWS Live Trading",
+      "4001": "IB Gateway Paper Trading",
+      "4000": "IB Gateway Live Trading"
+    }
+  },
+
+  "settings": {
+    "read_only": true,
+    "timeout_seconds": 10,
+    "max_retries": 3,
+    "auto_reconnect": false
+  },
+
+  "import_settings": {
+    "default_start_date": null,
+    "default_end_date": null,
+    "symbols_filter": [],
+    "skip_duplicates": true,
+    "duplicate_window_minutes": 1
+  },
+
+  "sync_settings": {
+    "sync_positions_on_import": false,
+    "sync_account_info": false,
+    "update_existing_positions": true
+  }
+}
