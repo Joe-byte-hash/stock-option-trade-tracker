@@ -80,7 +80,10 @@ class TradeDashboard:
             # Trade History Table
             html.Div([
                 html.H3("Trade History", style={'textAlign': 'center', 'marginTop': '30px'}),
+                html.P("Click on a strategy cell to change the trading strategy for a trade.",
+                      style={'textAlign': 'center', 'color': '#7f8c8d', 'fontSize': '14px'}),
                 html.Div(id='trade-table'),
+                html.Div(id='strategy-update-status'),  # Status messages for strategy updates
             ], style={'marginTop': '30px'}),
 
             # Refresh and Export Buttons
@@ -540,26 +543,62 @@ class TradeDashboard:
         return fig
 
     def _create_trade_table(self, trades, pnl_results):
-        """Create trade history table."""
+        """Create trade history table with editable strategy column."""
         if not trades:
             return html.Div("No trades found")
+
+        # Import TradingStrategy enum for dropdown options
+        from trade_tracker.models.trade import TradingStrategy
 
         # Prepare data
         table_data = []
         for i, (trade, pnl) in enumerate(zip(trades[:len(pnl_results)], pnl_results)):
+            # Get strategy name (convert enum to readable format)
+            strategy_value = trade.strategy.value if trade.strategy else "untagged"
+            strategy_name = strategy_value.replace('_', ' ').title()
+
             table_data.append({
+                'id': trade.id,  # Hidden column for updates
                 'Date': trade.trade_date.strftime('%Y-%m-%d'),
                 'Symbol': trade.symbol,
                 'Type': trade.trade_type.value,
                 'Quantity': trade.quantity,
                 'Price': f'${float(trade.price):.2f}',
+                'Strategy': strategy_name,
                 'P/L': f'${float(pnl.realized_pnl):,.2f}',
                 'Return': f'{float(pnl.return_percentage):.2f}%',
             })
 
+        # Create dropdown options for strategy column
+        strategy_options = [
+            {'label': strategy.value.replace('_', ' ').title(), 'value': strategy.value}
+            for strategy in TradingStrategy
+        ]
+
         return dash_table.DataTable(
+            id='trade-history-table',
             data=table_data,
-            columns=[{'name': col, 'id': col} for col in table_data[0].keys()],
+            columns=[
+                {'name': 'ID', 'id': 'id', 'hidden': True},  # Hidden for updates
+                {'name': 'Date', 'id': 'Date', 'editable': False},
+                {'name': 'Symbol', 'id': 'Symbol', 'editable': False},
+                {'name': 'Type', 'id': 'Type', 'editable': False},
+                {'name': 'Quantity', 'id': 'Quantity', 'editable': False},
+                {'name': 'Price', 'id': 'Price', 'editable': False},
+                {
+                    'name': 'Strategy',
+                    'id': 'Strategy',
+                    'editable': True,
+                    'presentation': 'dropdown'
+                },
+                {'name': 'P/L', 'id': 'P/L', 'editable': False},
+                {'name': 'Return', 'id': 'Return', 'editable': False},
+            ],
+            dropdown={
+                'Strategy': {
+                    'options': strategy_options
+                }
+            },
             style_cell={'textAlign': 'left', 'padding': '10px'},
             style_header={
                 'backgroundColor': '#34495e',
@@ -573,6 +612,7 @@ class TradeDashboard:
                 }
             ],
             page_size=10,
+            editable=True,
         )
 
         # Export callbacks
@@ -688,6 +728,63 @@ class TradeDashboard:
             exporter.export_tax_report(all_trades, pnl_results, current_year, output_file)
 
             return dcc.send_file(str(output_file))
+
+        # Strategy Update Callback
+        @self.app.callback(
+            Output('strategy-update-status', 'children'),
+            Input('trade-history-table', 'data'),
+            State('trade-history-table', 'data_previous'),
+            prevent_initial_call=True
+        )
+        def update_trade_strategy(current_data, previous_data):
+            """Update trade strategy when changed in table."""
+            if not current_data or not previous_data:
+                return ""
+
+            # Import TradingStrategy enum
+            from trade_tracker.models.trade import TradingStrategy
+
+            # Find which row changed
+            for i, (current_row, previous_row) in enumerate(zip(current_data, previous_data)):
+                if current_row['Strategy'] != previous_row['Strategy']:
+                    # Extract trade ID and new strategy
+                    trade_id = current_row['id']
+                    new_strategy_label = current_row['Strategy']
+
+                    # Convert label back to enum value (e.g., "Day Trade" -> "day_trade")
+                    new_strategy_value = new_strategy_label.lower().replace(' ', '_')
+
+                    # Validate strategy exists
+                    try:
+                        new_strategy = TradingStrategy(new_strategy_value)
+                    except ValueError:
+                        return html.Div(f"Invalid strategy: {new_strategy_label}",
+                                      style={'color': '#e74c3c', 'textAlign': 'center', 'marginTop': '10px'})
+
+                    # Update in database
+                    try:
+                        with self.db.get_session() as session:
+                            trade_repo = TradeRepository(session)
+                            trade = trade_repo.get_by_id(trade_id)
+
+                            if trade:
+                                # Update strategy
+                                trade.strategy = new_strategy
+                                trade_repo.update(trade)
+                                session.commit()
+
+                                return html.Div(
+                                    f"✅ Updated strategy for trade #{trade_id} to {new_strategy_label}",
+                                    style={'color': '#2ecc71', 'textAlign': 'center', 'marginTop': '10px'}
+                                )
+                            else:
+                                return html.Div(f"Trade #{trade_id} not found",
+                                              style={'color': '#e74c3c', 'textAlign': 'center', 'marginTop': '10px'})
+                    except Exception as e:
+                        return html.Div(f"Error updating strategy: {str(e)}",
+                                      style={'color': '#e74c3c', 'textAlign': 'center', 'marginTop': '10px'})
+
+            return ""
 
         # Broker Import Callbacks
         @self.app.callback(
