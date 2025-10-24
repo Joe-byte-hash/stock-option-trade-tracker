@@ -19,6 +19,7 @@ from trade_tracker.utils.export import TradeExporter
 from trade_tracker.integrations.manager import IntegrationManager
 from trade_tracker.integrations.ibkr import IBKRBroker
 from trade_tracker.integrations.credentials import CredentialManager
+from trade_tracker.visualization.charts import TradeChartBuilder
 
 
 class TradeDashboard:
@@ -227,6 +228,49 @@ class TradeDashboard:
                         html.Div(id='import-history-table'),
                     ]),
                 ], style={'maxWidth': '1000px', 'margin': '0 auto', 'padding': '20px'}),
+            ]),
+
+            # Trade Charts Section
+            html.Hr(style={'marginTop': '40px', 'marginBottom': '30px'}),
+            html.Div([
+                html.H2("📊 Trade Charts", style={'textAlign': 'center', 'color': '#2c3e50'}),
+                html.P("View price charts with your trade entry and exit points marked",
+                      style={'textAlign': 'center', 'color': '#7f8c8d', 'marginBottom': '30px'}),
+
+                html.Div([
+                    # Symbol selector
+                    html.Div([
+                        html.Label("Select Symbol:", style={'fontWeight': 'bold', 'marginRight': '10px'}),
+                        dcc.Dropdown(
+                            id='chart-symbol-dropdown',
+                            options=[],  # Will be populated dynamically
+                            value=None,
+                            placeholder="Select a symbol to chart",
+                            style={'width': '300px', 'display': 'inline-block'}
+                        ),
+                    ], style={'marginBottom': '20px'}),
+
+                    # Time period selector
+                    html.Div([
+                        html.Label("Time Period:", style={'fontWeight': 'bold', 'marginRight': '10px'}),
+                        dcc.Dropdown(
+                            id='chart-period-dropdown',
+                            options=[
+                                {'label': '1 Month', 'value': '1mo'},
+                                {'label': '3 Months', 'value': '3mo'},
+                                {'label': '6 Months', 'value': '6mo'},
+                                {'label': '1 Year', 'value': '1y'},
+                                {'label': '2 Years', 'value': '2y'},
+                                {'label': 'Max', 'value': 'max'},
+                            ],
+                            value='6mo',
+                            style={'width': '200px', 'display': 'inline-block', 'marginLeft': '20px'}
+                        ),
+                    ], style={'marginBottom': '30px'}),
+
+                    # Chart display
+                    html.Div(id='trade-chart-container'),
+                ], style={'maxWidth': '1200px', 'margin': '0 auto', 'padding': '20px'}),
             ]),
 
             # Download components
@@ -906,6 +950,88 @@ class TradeDashboard:
             except Exception as e:
                 return html.Div(f"Error loading history: {str(e)}",
                               style={'color': '#e74c3c', 'textAlign': 'center'})
+
+        # Chart Callbacks
+        @self.app.callback(
+            Output('chart-symbol-dropdown', 'options'),
+            [Input('refresh-button', 'n_clicks')]
+        )
+        def update_chart_symbols(n_clicks):
+            """Update available symbols for charting."""
+            try:
+                with self.db.get_session() as session:
+                    trade_repo = TradeRepository(session)
+                    all_trades = trade_repo.get_all()
+
+                    # Get unique symbols
+                    symbols = sorted(set(trade.symbol for trade in all_trades if trade.symbol))
+
+                    return [{'label': symbol, 'value': symbol} for symbol in symbols]
+
+            except Exception as e:
+                return []
+
+        @self.app.callback(
+            Output('trade-chart-container', 'children'),
+            [Input('chart-symbol-dropdown', 'value'),
+             Input('chart-period-dropdown', 'value')]
+        )
+        def update_trade_chart(symbol, period):
+            """Update trade chart based on selected symbol and period."""
+            if not symbol:
+                return html.Div(
+                    "Please select a symbol to view chart",
+                    style={'textAlign': 'center', 'color': '#7f8c8d', 'padding': '50px',
+                          'fontSize': '18px'}
+                )
+
+            try:
+                # Get all trades for this symbol
+                with self.db.get_session() as session:
+                    trade_repo = TradeRepository(session)
+                    all_trades = trade_repo.get_all()
+                    symbol_trades = [t for t in all_trades if t.symbol == symbol]
+
+                if not symbol_trades:
+                    return html.Div(
+                        f"No trades found for {symbol}",
+                        style={'textAlign': 'center', 'color': '#e74c3c', 'padding': '50px'}
+                    )
+
+                # Create chart
+                try:
+                    chart_builder = TradeChartBuilder()
+                    fig = chart_builder.create_trade_chart(
+                        symbol=symbol,
+                        trades=symbol_trades,
+                        period=period or '6mo'
+                    )
+
+                    if fig is None:
+                        return html.Div(
+                            f"Unable to fetch price data for {symbol}. The symbol may be delisted or invalid.",
+                            style={'textAlign': 'center', 'color': '#e74c3c', 'padding': '50px'}
+                        )
+
+                    return dcc.Graph(
+                        figure=fig,
+                        config={'displayModeBar': True, 'displaylogo': False}
+                    )
+
+                except ImportError:
+                    return html.Div([
+                        html.H4("📦 yfinance Required", style={'color': '#e74c3c'}),
+                        html.P("The charting feature requires the yfinance package."),
+                        html.P("Install it with: pip install yfinance",
+                              style={'fontFamily': 'monospace', 'backgroundColor': '#ecf0f1',
+                                    'padding': '10px', 'borderRadius': '5px'})
+                    ], style={'textAlign': 'center', 'padding': '50px'})
+
+            except Exception as e:
+                return html.Div(
+                    f"Error creating chart: {str(e)}",
+                    style={'textAlign': 'center', 'color': '#e74c3c', 'padding': '50px'}
+                )
 
     def run(self, host='127.0.0.1', port=8050, debug=True):
         """
