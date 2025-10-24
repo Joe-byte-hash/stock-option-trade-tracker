@@ -307,6 +307,14 @@ class TradeDashboard:
                         dcc.Graph(id='strategy-pnl-chart'),
                     ], style={'marginBottom': '30px'}),
 
+                    # Strategy performance over time
+                    html.Div([
+                        html.H4("Strategy Performance Over Time", style={'marginBottom': '15px'}),
+                        html.P("Cumulative P/L for each strategy showing performance trends",
+                              style={'color': '#7f8c8d', 'fontSize': '14px', 'marginBottom': '10px'}),
+                        dcc.Graph(id='strategy-timeline-chart'),
+                    ], style={'marginBottom': '30px'}),
+
                     # Strategy performance table
                     html.Div([
                         html.H4("Detailed Strategy Breakdown", style={'marginBottom': '15px'}),
@@ -1184,6 +1192,7 @@ class TradeDashboard:
         @self.app.callback(
             [Output('strategy-metrics-cards', 'children'),
              Output('strategy-pnl-chart', 'figure'),
+             Output('strategy-timeline-chart', 'figure'),
              Output('strategy-performance-table', 'children')],
             [Input('refresh-button', 'n_clicks'),
              Input('filter-start-date', 'date'),
@@ -1206,7 +1215,8 @@ class TradeDashboard:
                     if not filtered_trades:
                         empty_msg = html.Div("No trades match the selected filters",
                                            style={'textAlign': 'center', 'color': '#7f8c8d', 'padding': '50px'})
-                        return empty_msg, {}, empty_msg
+                        empty_fig = go.Figure()
+                        return empty_msg, empty_fig, empty_fig, empty_msg
 
                     # Calculate P/L
                     pnl_calc = PnLCalculator()
@@ -1224,7 +1234,8 @@ class TradeDashboard:
                     if not strategy_results:
                         empty_msg = html.Div("No completed trades to analyze",
                                            style={'textAlign': 'center', 'color': '#7f8c8d', 'padding': '50px'})
-                        return empty_msg, {}, empty_msg
+                        empty_fig = go.Figure()
+                        return empty_msg, empty_fig, empty_fig, empty_msg
 
                     # Create metrics cards
                     comparison = strategy_analyzer.compare_strategies(filtered_trades, pnl_results)
@@ -1233,15 +1244,19 @@ class TradeDashboard:
                     # Create P/L chart
                     chart = self._create_strategy_pnl_chart(strategy_results)
 
+                    # Create timeline chart
+                    timeline_chart = self._create_strategy_timeline_chart(filtered_trades, pnl_results)
+
                     # Create performance table
                     table = self._create_strategy_table(strategy_results)
 
-                    return cards, chart, table
+                    return cards, chart, timeline_chart, table
 
             except Exception as e:
                 error_msg = html.Div(f"Error analyzing strategies: {str(e)}",
                                    style={'color': '#e74c3c', 'textAlign': 'center', 'padding': '50px'})
-                return error_msg, {}, error_msg
+                empty_fig = go.Figure()
+                return error_msg, empty_fig, empty_fig, error_msg
 
     def _create_strategy_cards(self, comparison: Dict[str, Any]) -> html.Div:
         """Create strategy summary cards."""
@@ -1305,6 +1320,104 @@ class TradeDashboard:
             height=400,
             showlegend=False
         )
+
+        return fig
+
+    def _create_strategy_timeline_chart(self, trades: List, pnl_results: List) -> go.Figure:
+        """Create strategy performance timeline showing cumulative P/L over time."""
+        from trade_tracker.models.trade import TradingStrategy
+        from collections import defaultdict
+
+        # Group trades by strategy
+        strategy_trades = defaultdict(list)
+        for trade in trades:
+            strategy = trade.strategy or TradingStrategy.UNTAGGED
+            strategy_trades[strategy].append(trade)
+
+        # Calculate cumulative P/L for each strategy over time
+        fig = go.Figure()
+
+        # Color palette for strategies
+        colors = [
+            '#3498db', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6',
+            '#1abc9c', '#e67e22', '#34495e', '#16a085', '#27ae60',
+            '#2980b9', '#8e44ad', '#f1c40f', '#e74c3c', '#95a5a6',
+            '#d35400', '#c0392b'
+        ]
+
+        for idx, (strategy, strategy_trade_list) in enumerate(sorted(strategy_trades.items(), key=lambda x: x[0].value)):
+            # Sort trades by date
+            sorted_trades = sorted(strategy_trade_list, key=lambda t: t.trade_date)
+
+            # Match buy/sell pairs for this strategy
+            from trade_tracker.analytics.pnl import PnLCalculator
+            pnl_calc = PnLCalculator()
+
+            dates = []
+            cumulative_pnls = []
+            cumulative_pnl = 0
+
+            # Group by symbol within strategy
+            symbol_trades = defaultdict(list)
+            for trade in sorted_trades:
+                symbol_trades[trade.symbol].append(trade)
+
+            # Calculate P/L for each symbol's trades
+            for symbol, symbol_trade_list in symbol_trades.items():
+                # Sort by date
+                symbol_trade_list.sort(key=lambda t: t.trade_date)
+
+                # Match buy/sell pairs (FIFO)
+                buys = [t for t in symbol_trade_list if 'buy' in t.trade_type.value.lower()]
+                sells = [t for t in symbol_trade_list if 'sell' in t.trade_type.value.lower()]
+
+                for i, buy in enumerate(buys):
+                    if i < len(sells):
+                        sell = sells[i]
+                        try:
+                            if trade.asset_type.value == 'stock':
+                                pnl = pnl_calc.calculate_stock_pnl(buy, sell)
+                                if pnl and pnl.realized_pnl:
+                                    cumulative_pnl += float(pnl.realized_pnl)
+                                    # Use sell date as the completion date
+                                    dates.append(sell.trade_date)
+                                    cumulative_pnls.append(cumulative_pnl)
+                        except Exception:
+                            pass  # Skip on error
+
+            if dates:  # Only add trace if strategy has data
+                strategy_name = strategy.value.replace('_', ' ').title()
+                fig.add_trace(go.Scatter(
+                    x=dates,
+                    y=cumulative_pnls,
+                    mode='lines+markers',
+                    name=strategy_name,
+                    line=dict(color=colors[idx % len(colors)], width=2),
+                    marker=dict(size=6),
+                    hovertemplate=f'<b>{strategy_name}</b><br>' +
+                                  'Date: %{x|%Y-%m-%d}<br>' +
+                                  'Cumulative P/L: $%{y:.2f}<br>' +
+                                  '<extra></extra>'
+                ))
+
+        fig.update_layout(
+            title="Cumulative P/L by Strategy Over Time",
+            xaxis_title="Date",
+            yaxis_title="Cumulative P/L ($)",
+            template="plotly_white",
+            height=500,
+            hovermode='x unified',
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1
+            )
+        )
+
+        # Add horizontal line at y=0
+        fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
 
         return fig
 
