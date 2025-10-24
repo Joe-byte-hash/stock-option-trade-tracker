@@ -159,6 +159,52 @@ class TradeDashboard:
                     ], id='broker-settings', style={'marginBottom': '20px', 'padding': '15px',
                                                      'backgroundColor': '#ecf0f1', 'borderRadius': '5px'}),
 
+                    # Import Filters
+                    html.Div([
+                        html.H4("Import Filters (Optional)", style={'marginBottom': '15px'}),
+                        html.Div([
+                            html.Div([
+                                html.Label("Start Date:"),
+                                dcc.DatePickerSingle(
+                                    id='import-start-date',
+                                    placeholder='Select start date',
+                                    date=None,
+                                    display_format='YYYY-MM-DD',
+                                    style={'width': '100%'}
+                                ),
+                                html.Small("Leave empty to import all historical trades",
+                                          style={'color': '#7f8c8d', 'display': 'block', 'marginTop': '5px'}),
+                            ], style={'width': '30%', 'display': 'inline-block', 'marginRight': '20px', 'verticalAlign': 'top'}),
+
+                            html.Div([
+                                html.Label("End Date:"),
+                                dcc.DatePickerSingle(
+                                    id='import-end-date',
+                                    placeholder='Select end date',
+                                    date=None,
+                                    display_format='YYYY-MM-DD',
+                                    style={'width': '100%'}
+                                ),
+                                html.Small("Leave empty to import up to today",
+                                          style={'color': '#7f8c8d', 'display': 'block', 'marginTop': '5px'}),
+                            ], style={'width': '30%', 'display': 'inline-block', 'marginRight': '20px', 'verticalAlign': 'top'}),
+
+                            html.Div([
+                                html.Label("Symbol Filter:"),
+                                dcc.Input(
+                                    id='import-symbol-filter',
+                                    type='text',
+                                    placeholder='e.g., AAPL',
+                                    value='',
+                                    style={'width': '100%', 'padding': '8px', 'marginTop': '5px'}
+                                ),
+                                html.Small("Leave empty to import all symbols",
+                                          style={'color': '#7f8c8d', 'display': 'block', 'marginTop': '5px'}),
+                            ], style={'width': '30%', 'display': 'inline-block', 'verticalAlign': 'top'}),
+                        ]),
+                    ], id='import-filters', style={'marginBottom': '20px', 'padding': '15px',
+                                                    'backgroundColor': '#e8f5e9', 'borderRadius': '5px'}),
+
                     # Import Controls
                     html.Div([
                         html.Button('🔌 Connect & Import Trades', id='import-trades-button', n_clicks=0,
@@ -624,10 +670,13 @@ class TradeDashboard:
             [State('broker-host', 'value'),
              State('broker-port', 'value'),
              State('broker-client-id', 'value'),
-             State('broker-dropdown', 'value')],
+             State('broker-dropdown', 'value'),
+             State('import-start-date', 'date'),
+             State('import-end-date', 'date'),
+             State('import-symbol-filter', 'value')],
             prevent_initial_call=True
         )
-        def import_trades(n_clicks, host, port, client_id, broker_type):
+        def import_trades(n_clicks, host, port, client_id, broker_type, start_date, end_date, symbol):
             """Import trades from broker."""
             if broker_type != 'ibkr':
                 return html.Div("Only IBKR is currently supported.",
@@ -654,17 +703,49 @@ class TradeDashboard:
                     # Connect to broker
                     broker.connect()
 
+                    # Parse filter parameters
+                    start_dt = None
+                    end_dt = None
+                    if start_date:
+                        start_dt = datetime.fromisoformat(start_date)
+                    if end_date:
+                        end_dt = datetime.fromisoformat(end_date)
+
+                    # Clean up symbol filter (strip whitespace, None if empty)
+                    symbol_filter = symbol.strip() if symbol else None
+
                     # Import trades using IntegrationManager
                     manager = IntegrationManager(db_path=str(self.db.db_path))
-                    result = manager.import_trades(broker, account_id=1)
+                    result = manager.import_trades(
+                        broker,
+                        account_id=1,
+                        start_date=start_dt,
+                        end_date=end_dt,
+                        symbol=symbol_filter
+                    )
 
                     # Disconnect
                     broker.disconnect()
 
                     # Format results
                     if result['success']:
+                        # Build filter description
+                        filter_desc = []
+                        if start_dt:
+                            filter_desc.append(f"From: {start_dt.strftime('%Y-%m-%d')}")
+                        if end_dt:
+                            filter_desc.append(f"To: {end_dt.strftime('%Y-%m-%d')}")
+                        if symbol_filter:
+                            filter_desc.append(f"Symbol: {symbol_filter}")
+
+                        filter_info = html.Div(
+                            f"Filters: {', '.join(filter_desc) if filter_desc else 'None (imported all)'}",
+                            style={'fontSize': '14px', 'color': '#7f8c8d', 'marginBottom': '10px', 'fontStyle': 'italic'}
+                        )
+
                         return html.Div([
                             html.H4("✅ Import Successful!", style={'color': '#27ae60', 'marginBottom': '15px'}),
+                            filter_info,
                             html.Div([
                                 html.Div(f"📥 Imported: {result['imported_count']} trades",
                                        style={'fontSize': '16px', 'marginBottom': '5px'}),
