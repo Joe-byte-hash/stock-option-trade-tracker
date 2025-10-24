@@ -240,3 +240,31 @@ class TestIntegrationManager:
 
         # Should import the valid one and skip the invalid
         assert result['imported_count'] == 1
+
+    def test_import_trades_with_symbol_filter(self, integration_manager, mock_broker):
+        """Test importing trades with symbol filter."""
+        aapl_trade = StockTrade(
+            symbol="AAPL",
+            trade_type=TradeType.BUY,
+            quantity=100,
+            price=Decimal("150.00"),
+            commission=Decimal("1.00"),
+            trade_date=datetime.now(),
+            account_id=1
+        )
+
+        mock_broker.fetch_trades.return_value = [aapl_trade]
+
+        result = integration_manager.import_trades(
+            mock_broker,
+            account_id=1,
+            symbol="AAPL"
+        )
+
+        # Verify broker was called with symbol filter
+        mock_broker.fetch_trades.assert_called_once()
+        call_kwargs = mock_broker.fetch_trades.call_args.kwargs
+        assert call_kwargs.get('symbol') == "AAPL"
+
+        assert result['success'] is True
+        assert result['imported_count'] == 1
