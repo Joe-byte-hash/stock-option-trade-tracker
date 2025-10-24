@@ -47,6 +47,63 @@ class TradeDashboard:
                 html.Hr(),
             ], style={'marginBottom': '20px'}),
 
+            # Filter Controls
+            html.Div([
+                html.H3("🔍 Filters", style={'textAlign': 'center', 'marginBottom': '20px'}),
+                html.Div([
+                    # Date Range Filters
+                    html.Div([
+                        html.Label("Start Date:", style={'fontWeight': 'bold', 'marginBottom': '5px'}),
+                        dcc.DatePickerSingle(
+                            id='filter-start-date',
+                            placeholder='Start Date',
+                            display_format='YYYY-MM-DD',
+                            style={'width': '100%'}
+                        ),
+                    ], style={'width': '20%', 'display': 'inline-block', 'padding': '10px', 'verticalAlign': 'top'}),
+
+                    html.Div([
+                        html.Label("End Date:", style={'fontWeight': 'bold', 'marginBottom': '5px'}),
+                        dcc.DatePickerSingle(
+                            id='filter-end-date',
+                            placeholder='End Date',
+                            display_format='YYYY-MM-DD',
+                            style={'width': '100%'}
+                        ),
+                    ], style={'width': '20%', 'display': 'inline-block', 'padding': '10px', 'verticalAlign': 'top'}),
+
+                    # Symbol Filter
+                    html.Div([
+                        html.Label("Symbol:", style={'fontWeight': 'bold', 'marginBottom': '5px'}),
+                        dcc.Dropdown(
+                            id='filter-symbol',
+                            placeholder='All Symbols',
+                            multi=True,
+                            style={'width': '100%'}
+                        ),
+                    ], style={'width': '25%', 'display': 'inline-block', 'padding': '10px', 'verticalAlign': 'top'}),
+
+                    # Strategy Filter
+                    html.Div([
+                        html.Label("Strategy:", style={'fontWeight': 'bold', 'marginBottom': '5px'}),
+                        dcc.Dropdown(
+                            id='filter-strategy',
+                            placeholder='All Strategies',
+                            multi=True,
+                            style={'width': '100%'}
+                        ),
+                    ], style={'width': '25%', 'display': 'inline-block', 'padding': '10px', 'verticalAlign': 'top'}),
+
+                    # Reset Button
+                    html.Div([
+                        html.Button('🔄 Reset Filters', id='reset-filters-button', n_clicks=0,
+                                  style={'marginTop': '25px', 'padding': '10px 20px', 'fontSize': '14px',
+                                        'cursor': 'pointer', 'backgroundColor': '#95a5a6', 'color': 'white',
+                                        'border': 'none', 'borderRadius': '5px', 'width': '100%'}),
+                    ], style={'width': '10%', 'display': 'inline-block', 'padding': '10px', 'verticalAlign': 'top'}),
+                ], style={'textAlign': 'center', 'backgroundColor': '#ecf0f1', 'padding': '15px', 'borderRadius': '10px'}),
+            ], style={'marginBottom': '30px'}),
+
             # Metrics Cards Row
             html.Div(id='metrics-cards', children=[],
                     style={'marginBottom': '30px'}),
@@ -273,6 +330,45 @@ class TradeDashboard:
     def _setup_callbacks(self):
         """Setup dashboard callbacks."""
 
+        # Filter population callback
+        @self.app.callback(
+            [Output('filter-symbol', 'options'),
+             Output('filter-strategy', 'options')],
+            [Input('refresh-button', 'n_clicks')]
+        )
+        def populate_filters(n_clicks):
+            """Populate filter dropdowns with available options."""
+            from trade_tracker.models.trade import TradingStrategy
+
+            with self.db.get_session() as session:
+                trade_repo = TradeRepository(session)
+                all_trades = trade_repo.get_all()
+
+            # Get unique symbols
+            symbols = sorted(set(trade.symbol for trade in all_trades))
+            symbol_options = [{'label': symbol, 'value': symbol} for symbol in symbols]
+
+            # Get all strategies
+            strategy_options = [
+                {'label': strategy.value.replace('_', ' ').title(), 'value': strategy.value}
+                for strategy in TradingStrategy
+            ]
+
+            return symbol_options, strategy_options
+
+        # Reset filters callback
+        @self.app.callback(
+            [Output('filter-start-date', 'date'),
+             Output('filter-end-date', 'date'),
+             Output('filter-symbol', 'value'),
+             Output('filter-strategy', 'value')],
+            [Input('reset-filters-button', 'n_clicks')],
+            prevent_initial_call=True
+        )
+        def reset_filters(n_clicks):
+            """Reset all filters to default values."""
+            return None, None, None, None
+
         @self.app.callback(
             [Output('trade-data-store', 'data'),
              Output('pnl-data-store', 'data'),
@@ -282,29 +378,38 @@ class TradeDashboard:
              Output('monthly-pnl-chart', 'figure'),
              Output('symbol-performance-chart', 'figure'),
              Output('trade-table', 'children')],
-            [Input('refresh-button', 'n_clicks')]
+            [Input('refresh-button', 'n_clicks'),
+             Input('filter-start-date', 'date'),
+             Input('filter-end-date', 'date'),
+             Input('filter-symbol', 'value'),
+             Input('filter-strategy', 'value')]
         )
-        def update_dashboard(n_clicks):
-            """Update all dashboard components."""
+        def update_dashboard(n_clicks, start_date, end_date, symbols_filter, strategies_filter):
+            """Update all dashboard components with filtering."""
             # Load data
             with self.db.get_session() as session:
                 trade_repo = TradeRepository(session)
                 all_trades = trade_repo.get_all()
 
-            if not all_trades:
-                # Return empty components if no trades
+            # Apply filters
+            filtered_trades = self._apply_filters(
+                all_trades, start_date, end_date, symbols_filter, strategies_filter
+            )
+
+            if not filtered_trades:
+                # Return empty components if no trades after filtering
                 empty_fig = go.Figure()
                 empty_fig.add_annotation(
-                    text="No trade data available",
+                    text="No trades match the selected filters",
                     xref="paper", yref="paper",
                     x=0.5, y=0.5, showarrow=False,
                     font=dict(size=20, color="gray")
                 )
                 return {}, {}, [], empty_fig, empty_fig, empty_fig, empty_fig, html.Div("No trades found")
 
-            # Calculate P/L for all trades
+            # Calculate P/L for filtered trades
             pnl_calculator = PnLCalculator()
-            pnl_results = self._calculate_pnl_for_trades(all_trades, pnl_calculator)
+            pnl_results = self._calculate_pnl_for_trades(filtered_trades, pnl_calculator)
 
             # Calculate metrics
             metrics_calc = MetricsCalculator()
@@ -314,15 +419,60 @@ class TradeDashboard:
             metrics_cards = self._create_metrics_cards(stats, pnl_results)
             equity_curve = self._create_equity_curve(pnl_results)
             pnl_dist = self._create_pnl_distribution(pnl_results)
-            monthly_pnl = self._create_monthly_pnl_chart(all_trades, pnl_results)
+            monthly_pnl = self._create_monthly_pnl_chart(filtered_trades, pnl_results)
             symbol_perf = self._create_symbol_performance_chart(pnl_results)
-            trade_table = self._create_trade_table(all_trades, pnl_results)
+            trade_table = self._create_trade_table(filtered_trades, pnl_results)
 
             # Store data for export callbacks
-            trade_data = {'trades': all_trades, 'pnl_results': pnl_results}
-            pnl_data = {'pnl_results': pnl_results, 'trades': all_trades}
+            trade_data = {'trades': filtered_trades, 'pnl_results': pnl_results}
+            pnl_data = {'pnl_results': pnl_results, 'trades': filtered_trades}
 
             return {}, pnl_data, metrics_cards, equity_curve, pnl_dist, monthly_pnl, symbol_perf, trade_table
+
+    def _apply_filters(self, trades, start_date, end_date, symbols_filter, strategies_filter):
+        """
+        Apply filters to trades.
+
+        Args:
+            trades: List of all trades
+            start_date: Start date filter (str or None)
+            end_date: End date filter (str or None)
+            symbols_filter: List of symbols to filter (or None for all)
+            strategies_filter: List of strategies to filter (or None for all)
+
+        Returns:
+            Filtered list of trades
+        """
+        from trade_tracker.models.trade import TradingStrategy
+
+        filtered = trades
+
+        # Apply date range filter
+        if start_date:
+            start_dt = datetime.fromisoformat(start_date.split('T')[0])
+            filtered = [t for t in filtered if t.trade_date.date() >= start_dt.date()]
+
+        if end_date:
+            end_dt = datetime.fromisoformat(end_date.split('T')[0])
+            filtered = [t for t in filtered if t.trade_date.date() <= end_dt.date()]
+
+        # Apply symbol filter
+        if symbols_filter:
+            filtered = [t for t in filtered if t.symbol in symbols_filter]
+
+        # Apply strategy filter
+        if strategies_filter:
+            # Convert strategy filter values to enum instances for comparison
+            strategy_enums = []
+            for strategy_value in strategies_filter:
+                try:
+                    strategy_enums.append(TradingStrategy(strategy_value))
+                except ValueError:
+                    pass  # Skip invalid strategy values
+
+            filtered = [t for t in filtered if t.strategy in strategy_enums]
+
+        return filtered
 
     def _calculate_pnl_for_trades(self, trades, calculator):
         """Calculate P/L for trade pairs."""
@@ -1035,24 +1185,33 @@ class TradeDashboard:
             [Output('strategy-metrics-cards', 'children'),
              Output('strategy-pnl-chart', 'figure'),
              Output('strategy-performance-table', 'children')],
-            [Input('refresh-button', 'n_clicks')]
+            [Input('refresh-button', 'n_clicks'),
+             Input('filter-start-date', 'date'),
+             Input('filter-end-date', 'date'),
+             Input('filter-symbol', 'value'),
+             Input('filter-strategy', 'value')]
         )
-        def update_strategy_performance(n_clicks):
-            """Update strategy performance visualizations."""
+        def update_strategy_performance(n_clicks, start_date, end_date, symbols_filter, strategies_filter):
+            """Update strategy performance visualizations with filtering."""
             try:
                 with self.db.get_session() as session:
                     trade_repo = TradeRepository(session)
                     all_trades = trade_repo.get_all()
 
-                    if not all_trades:
-                        empty_msg = html.Div("No trades available for strategy analysis",
+                    # Apply filters
+                    filtered_trades = self._apply_filters(
+                        all_trades, start_date, end_date, symbols_filter, strategies_filter
+                    )
+
+                    if not filtered_trades:
+                        empty_msg = html.Div("No trades match the selected filters",
                                            style={'textAlign': 'center', 'color': '#7f8c8d', 'padding': '50px'})
                         return empty_msg, {}, empty_msg
 
                     # Calculate P/L
                     pnl_calc = PnLCalculator()
                     pnl_results = []
-                    for trade in all_trades:
+                    for trade in filtered_trades:
                         if trade.asset_type.value == 'stock':
                             pnl = pnl_calc.calculate_stock_pnl([trade])
                             if pnl:
@@ -1060,7 +1219,7 @@ class TradeDashboard:
 
                     # Analyze strategies
                     strategy_analyzer = StrategyAnalyzer()
-                    strategy_results = strategy_analyzer.analyze_by_strategy(all_trades, pnl_results)
+                    strategy_results = strategy_analyzer.analyze_by_strategy(filtered_trades, pnl_results)
 
                     if not strategy_results:
                         empty_msg = html.Div("No completed trades to analyze",
@@ -1068,7 +1227,7 @@ class TradeDashboard:
                         return empty_msg, {}, empty_msg
 
                     # Create metrics cards
-                    comparison = strategy_analyzer.compare_strategies(all_trades, pnl_results)
+                    comparison = strategy_analyzer.compare_strategies(filtered_trades, pnl_results)
                     cards = self._create_strategy_cards(comparison)
 
                     # Create P/L chart
