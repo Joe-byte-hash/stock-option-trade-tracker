@@ -409,21 +409,29 @@ class PositionRepository:
             return self._to_model(db_position)
         return None
 
-    def get_by_symbol(self, symbol: str) -> Optional[Position]:
+    def get_by_symbol(self, symbol: str, account_id: Optional[int] = None) -> Optional[Position]:
         """
         Get position by symbol.
 
         Args:
             symbol: Stock/option symbol
+            account_id: Optional account ID to filter by
 
         Returns:
             Position if found, None otherwise
         """
+        # Build query conditions
+        conditions = [
+            PositionDB.symbol == symbol,
+            PositionDB.status == PositionStatus.OPEN.value
+        ]
+
+        # Add account filter if provided
+        if account_id is not None:
+            conditions.append(PositionDB.account_id == account_id)
+
         db_position = self.session.execute(
-            select(PositionDB).where(
-                PositionDB.symbol == symbol,
-                PositionDB.status == PositionStatus.OPEN.value
-            )
+            select(PositionDB).where(*conditions)
         ).scalar_one_or_none()
 
         if db_position:
