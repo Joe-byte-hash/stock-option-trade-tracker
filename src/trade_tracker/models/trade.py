@@ -41,6 +41,38 @@ class OptionType(str, Enum):
     PUT = "put"
 
 
+class TradingStrategy(str, Enum):
+    """Trading strategy enumeration."""
+
+    # Stock strategies
+    DAY_TRADE = "day_trade"
+    SWING_TRADE = "swing_trade"
+    POSITION_TRADE = "position_trade"
+    SCALPING = "scalping"
+    MOMENTUM = "momentum"
+    BREAKOUT = "breakout"
+    REVERSAL = "reversal"
+
+    # Option strategies
+    COVERED_CALL = "covered_call"
+    CASH_SECURED_PUT = "cash_secured_put"
+    PROTECTIVE_PUT = "protective_put"
+    COLLAR = "collar"
+    LONG_CALL = "long_call"
+    LONG_PUT = "long_put"
+    BULL_CALL_SPREAD = "bull_call_spread"
+    BEAR_PUT_SPREAD = "bear_put_spread"
+    IRON_CONDOR = "iron_condor"
+    BUTTERFLY = "butterfly"
+    STRADDLE = "straddle"
+    STRANGLE = "strangle"
+    CALENDAR_SPREAD = "calendar_spread"
+
+    # General
+    OTHER = "other"
+    UNTAGGED = "untagged"
+
+
 class Trade(BaseModel):
     """Base trade model."""
 
@@ -54,6 +86,7 @@ class Trade(BaseModel):
     trade_date: datetime
     account_id: Optional[int] = None
     status: TradeStatus = TradeStatus.OPEN
+    strategy: Optional[TradingStrategy] = TradingStrategy.UNTAGGED
     notes: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
