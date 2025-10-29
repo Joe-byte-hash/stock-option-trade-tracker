@@ -16,6 +16,7 @@ from trade_tracker.database.repository import TradeRepository, AccountRepository
 from trade_tracker.analytics.pnl import PnLCalculator
 from trade_tracker.analytics.metrics import MetricsCalculator
 from trade_tracker.analytics.strategy import StrategyAnalyzer
+from trade_tracker.analytics.risk import RiskCalculator
 from trade_tracker.utils.export import TradeExporter
 from trade_tracker.integrations.manager import IntegrationManager
 from trade_tracker.integrations.ibkr import IBKRBroker
@@ -171,6 +172,32 @@ class TradeDashboard:
                                 'backgroundColor': '#e67e22', 'color': 'white',
                                 'border': 'none', 'borderRadius': '5px'}),
             ], style={'textAlign': 'center', 'marginBottom': '30px'}),
+
+            # Risk Management Section
+            html.Hr(style={'marginTop': '40px', 'marginBottom': '30px'}),
+            html.Div([
+                html.H2("⚠️ Risk Management", style={'textAlign': 'center', 'color': '#2c3e50'}),
+                html.P("Analyze risk metrics and evaluate trading performance",
+                      style={'textAlign': 'center', 'color': '#7f8c8d', 'marginBottom': '30px'}),
+
+                html.Div([
+                    # Risk metrics cards
+                    html.Div(id='risk-metrics-cards', style={'marginBottom': '30px'}),
+
+                    # Risk distribution charts
+                    html.Div([
+                        html.Div([
+                            html.H4("Return Distribution", style={'marginBottom': '15px'}),
+                            dcc.Graph(id='return-distribution-chart'),
+                        ], style={'width': '50%', 'display': 'inline-block', 'padding': '10px', 'verticalAlign': 'top'}),
+
+                        html.Div([
+                            html.H4("Drawdown Chart", style={'marginBottom': '15px'}),
+                            dcc.Graph(id='drawdown-chart'),
+                        ], style={'width': '50%', 'display': 'inline-block', 'padding': '10px', 'verticalAlign': 'top'}),
+                    ]),
+                ]),
+            ], style={'marginBottom': '40px'}),
 
             # Broker Import Section
             html.Hr(style={'marginTop': '40px', 'marginBottom': '30px'}),
@@ -1188,6 +1215,62 @@ class TradeDashboard:
                 return html.Div(f"Error loading history: {str(e)}",
                               style={'color': '#e74c3c', 'textAlign': 'center'})
 
+        # Risk Management Callbacks
+        @self.app.callback(
+            [Output('risk-metrics-cards', 'children'),
+             Output('return-distribution-chart', 'figure'),
+             Output('drawdown-chart', 'figure')],
+            [Input('refresh-button', 'n_clicks'),
+             Input('filter-start-date', 'date'),
+             Input('filter-end-date', 'date'),
+             Input('filter-symbol', 'value'),
+             Input('filter-strategy', 'value')]
+        )
+        def update_risk_metrics(n_clicks, start_date, end_date, symbols_filter, strategies_filter):
+            """Update risk management visualizations with filtering."""
+            try:
+                with self.db.get_session() as session:
+                    trade_repo = TradeRepository(session)
+                    all_trades = trade_repo.get_all()
+
+                    # Apply filters
+                    filtered_trades = self._apply_filters(
+                        all_trades, start_date, end_date, symbols_filter, strategies_filter
+                    )
+
+                    if not filtered_trades:
+                        empty_msg = html.Div("No trades match the selected filters",
+                                           style={'textAlign': 'center', 'color': '#7f8c8d', 'padding': '50px'})
+                        empty_fig = go.Figure()
+                        return empty_msg, empty_fig, empty_fig
+
+                    # Calculate P/L
+                    pnl_calc = PnLCalculator()
+                    pnl_results = self._calculate_pnl_for_trades(filtered_trades, pnl_calc)
+
+                    if not pnl_results:
+                        empty_msg = html.Div("No completed trades to analyze",
+                                           style={'textAlign': 'center', 'color': '#7f8c8d', 'padding': '50px'})
+                        empty_fig = go.Figure()
+                        return empty_msg, empty_fig, empty_fig
+
+                    # Calculate risk metrics
+                    risk_calc = RiskCalculator()
+                    risk_metrics = risk_calc.calculate_risk_metrics(pnl_results)
+
+                    # Create visualizations
+                    cards = self._create_risk_cards(risk_metrics)
+                    return_dist_chart = self._create_return_distribution_chart(pnl_results)
+                    drawdown_chart = self._create_drawdown_chart(pnl_results)
+
+                    return cards, return_dist_chart, drawdown_chart
+
+            except Exception as e:
+                error_msg = html.Div(f"Error analyzing risk: {str(e)}",
+                                   style={'color': '#e74c3c', 'textAlign': 'center', 'padding': '50px'})
+                empty_fig = go.Figure()
+                return error_msg, empty_fig, empty_fig
+
         # Strategy Performance Callbacks
         @self.app.callback(
             [Output('strategy-metrics-cards', 'children'),
@@ -1478,6 +1561,202 @@ class TradeDashboard:
             sort_action='native',
             filter_action='native',
         )
+
+    def _create_risk_cards(self, risk_metrics) -> html.Div:
+        """Create risk management metric cards."""
+        from trade_tracker.analytics.risk import RiskMetrics
+
+        def create_metric_card(title, value, subtitle="", color="#3498db"):
+            """Helper to create individual metric card."""
+            return html.Div([
+                html.H4(title, style={'color': '#2c3e50', 'marginBottom': '10px', 'fontSize': '16px'}),
+                html.H2(value, style={'color': color, 'marginBottom': '5px', 'fontSize': '32px', 'fontWeight': 'bold'}),
+                html.P(subtitle, style={'color': '#7f8c8d', 'fontSize': '12px', 'margin': '0'}),
+            ], style={
+                'backgroundColor': 'white',
+                'padding': '20px',
+                'borderRadius': '10px',
+                'boxShadow': '0 2px 4px rgba(0,0,0,0.1)',
+                'textAlign': 'center',
+                'minWidth': '150px'
+            })
+
+        cards = []
+
+        # Row 1: Key Risk Metrics
+        row1 = html.Div([
+            create_metric_card(
+                "Sharpe Ratio",
+                f"{risk_metrics.sharpe_ratio:.2f}" if risk_metrics.sharpe_ratio else "N/A",
+                "Risk-adjusted returns",
+                '#2ecc71' if risk_metrics.sharpe_ratio and risk_metrics.sharpe_ratio > 1 else '#e74c3c'
+            ),
+            create_metric_card(
+                "Max Drawdown",
+                f"${float(risk_metrics.max_drawdown):,.0f}" if risk_metrics.max_drawdown else "N/A",
+                f"{risk_metrics.max_drawdown_percent:.1f}%" if risk_metrics.max_drawdown_percent else "",
+                '#e74c3c'
+            ),
+            create_metric_card(
+                "Win Streak",
+                f"{risk_metrics.longest_winning_streak}",
+                "trades in a row",
+                '#2ecc71'
+            ),
+            create_metric_card(
+                "Loss Streak",
+                f"{risk_metrics.longest_losing_streak}",
+                "trades in a row",
+                '#e74c3c'
+            ),
+            create_metric_card(
+                "Profit Factor",
+                f"{risk_metrics.profit_factor:.2f}" if risk_metrics.profit_factor else "N/A",
+                "Gross profit / loss",
+                '#2ecc71' if risk_metrics.profit_factor and risk_metrics.profit_factor > 1 else '#e74c3c'
+            ),
+        ], style={'display': 'flex', 'justifyContent': 'space-around', 'marginBottom': '20px', 'flexWrap': 'wrap', 'gap': '10px'})
+
+        # Row 2: Additional Metrics
+        row2 = html.Div([
+            create_metric_card(
+                "Volatility",
+                f"{risk_metrics.volatility:.2f}" if risk_metrics.volatility else "N/A",
+                "Std dev of returns",
+                '#f39c12'
+            ),
+            create_metric_card(
+                "Risk/Reward",
+                f"{risk_metrics.risk_reward_ratio:.2f}" if risk_metrics.risk_reward_ratio else "N/A",
+                "Avg win / Avg loss",
+                '#2ecc71' if risk_metrics.risk_reward_ratio and risk_metrics.risk_reward_ratio > 1.5 else '#e67e22'
+            ),
+            create_metric_card(
+                "Expectancy",
+                f"${float(risk_metrics.expectancy):.2f}" if risk_metrics.expectancy else "N/A",
+                "Expected per trade",
+                '#2ecc71' if risk_metrics.expectancy and risk_metrics.expectancy > 0 else '#e74c3c'
+            ),
+            create_metric_card(
+                "Recovery Factor",
+                f"{risk_metrics.recovery_factor:.2f}" if risk_metrics.recovery_factor else "N/A",
+                "Profit / Drawdown",
+                '#2ecc71' if risk_metrics.recovery_factor and risk_metrics.recovery_factor > 2 else '#e67e22'
+            ),
+            create_metric_card(
+                "Sortino Ratio",
+                f"{risk_metrics.sortino_ratio:.2f}" if risk_metrics.sortino_ratio else "N/A",
+                "Downside risk-adjusted",
+                '#2ecc71' if risk_metrics.sortino_ratio and risk_metrics.sortino_ratio > 1 else '#e74c3c'
+            ),
+        ], style={'display': 'flex', 'justifyContent': 'space-around', 'marginBottom': '20px', 'flexWrap': 'wrap', 'gap': '10px'})
+
+        return html.Div([row1, row2])
+
+    def _create_return_distribution_chart(self, pnl_results: List) -> go.Figure:
+        """Create return distribution histogram."""
+        returns = [float(pnl.realized_pnl) for pnl in pnl_results if pnl.realized_pnl is not None]
+
+        if not returns:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No return data available",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=16, color="gray")
+            )
+            return fig
+
+        fig = go.Figure(data=[
+            go.Histogram(
+                x=returns,
+                nbinsx=30,
+                marker_color='#3498db',
+                opacity=0.7,
+                name='Returns'
+            )
+        ])
+
+        # Add mean line
+        mean_return = sum(returns) / len(returns)
+        fig.add_vline(
+            x=mean_return,
+            line_dash="dash",
+            line_color="red",
+            annotation_text=f"Mean: ${mean_return:.2f}",
+            annotation_position="top right"
+        )
+
+        # Add zero line
+        fig.add_vline(x=0, line_dash="dot", line_color="gray", opacity=0.5)
+
+        fig.update_layout(
+            title="Distribution of Trade Returns",
+            xaxis_title="Return ($)",
+            yaxis_title="Frequency",
+            template="plotly_white",
+            height=400,
+            showlegend=False
+        )
+
+        return fig
+
+    def _create_drawdown_chart(self, pnl_results: List) -> go.Figure:
+        """Create drawdown chart showing peak-to-trough declines."""
+        returns = [float(pnl.realized_pnl) for pnl in pnl_results if pnl.realized_pnl is not None]
+
+        if not returns:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No return data available",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=16, color="gray")
+            )
+            return fig
+
+        # Calculate cumulative returns and drawdown
+        cumulative = [0]
+        for ret in returns:
+            cumulative.append(cumulative[-1] + ret)
+
+        # Calculate drawdown from peak
+        drawdowns = []
+        peak = cumulative[0]
+
+        for value in cumulative:
+            if value > peak:
+                peak = value
+            drawdown = peak - value
+            drawdown_pct = (drawdown / abs(peak) * 100) if peak != 0 else 0
+            drawdowns.append(-drawdown_pct)  # Negative for downward chart
+
+        fig = go.Figure()
+
+        # Add drawdown area
+        fig.add_trace(go.Scatter(
+            x=list(range(len(drawdowns))),
+            y=drawdowns,
+            fill='tozeroy',
+            fillcolor='rgba(231, 76, 60, 0.3)',
+            line=dict(color='#e74c3c', width=2),
+            name='Drawdown',
+            mode='lines'
+        ))
+
+        fig.update_layout(
+            title="Drawdown Chart",
+            xaxis_title="Trade Number",
+            yaxis_title="Drawdown (%)",
+            template="plotly_white",
+            height=400,
+            showlegend=False
+        )
+
+        # Add zero line
+        fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
+
+        return fig
 
     def run(self, host='127.0.0.1', port=8050, debug=True):
         """
